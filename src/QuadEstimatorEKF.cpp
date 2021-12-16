@@ -307,12 +307,14 @@ void QuadEstimatorEKF::Predict(float dt, V3F accel, V3F gyro)
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
   // Use Accelerometer Reading as Commands
-  VectorXf u(4);
+  // Skip the Yaw, as it is not needed for the covariance calculation
+  //VectorXf u(4);
+  VectorXf u(3);
   u(0) = accel.x;
   u(1) = accel.y;
   u(2) = accel.z;
-  u(3) = gyro.z;
-  //u.transposeInPlace();
+  //u(3) = gyro.z;
+ 
 
   // Build gPrime Matrix (g is done at state update)
   gPrime(0, 3) = dt;
