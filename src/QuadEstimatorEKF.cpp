@@ -3,6 +3,7 @@
 #include "Utility/SimpleConfig.h"
 #include "Utility/StringUtils.h"
 #include "Math/Quaternion.h"
+#include <iostream>
 
 using namespace SLR;
 
@@ -89,13 +90,31 @@ void QuadEstimatorEKF::UpdateFromIMU(V3F accel, V3F gyro)
   //       (Quaternion<float> also has a IntegrateBodyRate function, though this uses quaternions, not Euler angles)
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+  
+
+  Quaternion<float> q = Quaternion<float>().FromEuler123_RPY(this->rollEst, this->pitchEst, this->ekfState(6));
+  Quaternion<float> q_bar = q.IntegrateBodyRate(gyro, this->dtIMU);
+
+  float roll_gyro = q_bar.Roll();
+  float pitch_gyro = q_bar.Pitch();
+  float yaw_gyro = q_bar.Yaw();
+  
+  //cout << "Gyro: " << (float) roll_gyro << "\tAccel: " << (float) accelRoll << endl;
+
+  float predictedPitch = (this->attitudeTau / (this->attitudeTau + this->dtIMU)) * pitch_gyro +(this->dtIMU / (this->attitudeTau + this->dtIMU)) * accelRoll;
+  float predictedRoll = (this->attitudeTau / (this->attitudeTau + this->dtIMU)) * roll_gyro +(this->dtIMU / (this->attitudeTau + this->dtIMU)) * accelPitch;
+
+  ekfState(6) = yaw_gyro;
+
+
   // SMALL ANGLE GYRO INTEGRATION:
   // (replace the code below)
   // make sure you comment it out when you add your own code -- otherwise e.g. you might integrate yaw twice
 
-  float predictedPitch = pitchEst + dtIMU * gyro.y;
-  float predictedRoll = rollEst + dtIMU * gyro.x;
-  ekfState(6) = ekfState(6) + dtIMU * gyro.z;	// yaw
+
+  //float predictedPitch = pitchEst + dtIMU * gyro.y;
+  //float predictedRoll = rollEst + dtIMU * gyro.x;
+  //ekfState(6) = ekfState(6) + dtIMU * gyro.z;	// yaw
 
   // normalize yaw to -pi .. pi
   if (ekfState(6) > F_PI) ekfState(6) -= 2.f*F_PI;
@@ -162,6 +181,29 @@ VectorXf QuadEstimatorEKF::PredictState(VectorXf curState, float dt, V3F accel, 
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
+  //trueState(0) = truePos.x;
+  //trueState(1) = truePos.y;
+  //trueState(2) = truePos.z;
+  //trueState(3) = trueVel.x;
+  //trueState(4) = trueVel.y;
+  //trueState(5) = trueVel.z;
+  //trueState(6) = trueAtt.Yaw();
+
+  V3F accel_xyz = attitude.Rotate_BtoI(accel);
+  V3F gyro_xyz = attitude.Rotate_BtoI(gyro);
+  
+
+  predictedState(3) = curState(3) + accel_xyz.x * dt; // x_dot
+  predictedState(4) = curState(4) + accel_xyz.y * dt; // y_dot
+  predictedState(5) = ( curState(5) - 9.81 * dt )  + accel_xyz.z * dt;  // z_dot
+
+  predictedState(0) = curState(0) + predictedState(3) * dt; // x
+  predictedState(1) = curState(1) + predictedState(4) * dt; // y
+  predictedState(2) = curState(2) + predictedState(5) * dt; // z
+
+  predictedState(6) - curState(6);
+
+
 
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
@@ -188,7 +230,36 @@ MatrixXf QuadEstimatorEKF::GetRbgPrime(float roll, float pitch, float yaw)
   //   that your calculations are reasonable
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+  float rc = cos(roll);
+  float rs = sin(roll);
+  float pc = cos(pitch);
+  float ps = sin(pitch);
+  float yc = cos(yaw);
+  float ys = sin(yaw);
 
+  //Rbg(0, 0) = rc * yc;
+  //Rbg(1, 0) = rc * ys;
+  //Rbg(2, 0) = -rs;
+
+  //Rbg(0, 1) = ps * rs * yc - pc * ys;
+  //Rbg(1, 1) = ps * rs * ys + pc * yc;
+  //Rbg(2, 1) = rc * ps;
+
+  //Rbg(0, 2) = pc * rs * yc + ps * ys;
+  //Rbg(1, 2) = pc * rs * ys - ps * yc;
+  //Rbg(2, 2) = rc * pc;
+
+  RbgPrime(0, 0) = -rc * ys;
+  RbgPrime(1, 0) = rc * yc;
+  RbgPrime(2, 0) = 0;
+
+  RbgPrime(0, 1) = - ps * rs * ys - pc * yc;
+  RbgPrime(1, 1) = ps * rs * yc - pc * ys;
+  RbgPrime(2, 1) = 0;
+
+  RbgPrime(0, 2) = -pc * rs * ys + ps * yc;
+  RbgPrime(1, 2) = pc * rs * yc + ps * ys;
+  RbgPrime(2, 2) = 0;
 
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
@@ -235,7 +306,41 @@ void QuadEstimatorEKF::Predict(float dt, V3F accel, V3F gyro)
 
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
+  // Use Accelerometer Reading as Commands
+  VectorXf u(4);
+  u(0) = accel.x;
+  u(1) = accel.y;
+  u(2) = accel.z;
+  u(3) = gyro.z;
+  //u.transposeInPlace();
 
+  // Build gPrime Matrix (g is done at state update)
+  gPrime(0, 3) = dt;
+  gPrime(1, 4) = dt;
+  gPrime(2, 5) = dt;
+
+  VectorXf rbgPrime_R1(3);
+  rbgPrime_R1(0) = RbgPrime(0, 0);
+  rbgPrime_R1(1) = RbgPrime(0, 1);
+  rbgPrime_R1(2) = RbgPrime(0, 2);
+  gPrime(3, 6) = rbgPrime_R1.dot(u) * dt;
+
+  VectorXf rbgPrime_R2(3);
+  rbgPrime_R2(0) = RbgPrime(1, 0);
+  rbgPrime_R2(1) = RbgPrime(1, 1);
+  rbgPrime_R2(2) = RbgPrime(1, 2);
+  gPrime(4, 6) = rbgPrime_R2.dot(u) * dt;
+
+  VectorXf rbgPrime_R3(3);
+  rbgPrime_R3(0) = RbgPrime(2, 0);
+  rbgPrime_R3(1) = RbgPrime(2, 1);
+  rbgPrime_R3(2) = RbgPrime(2, 2);
+  gPrime(5, 6) = rbgPrime_R3.dot(u) * dt;
+
+  // Update covariance matrix
+  
+  this->ekfCov = gPrime * this->ekfCov * gPrime.transpose() + this->Q;
+  
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
   ekfState = newState;
