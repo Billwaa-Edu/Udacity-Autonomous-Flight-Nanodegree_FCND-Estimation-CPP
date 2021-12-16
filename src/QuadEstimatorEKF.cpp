@@ -367,6 +367,17 @@ void QuadEstimatorEKF::UpdateFromGPS(V3F pos, V3F vel)
   //  - this is a very simple update
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
 
+  for (int i = 0; i < 6; i++)
+  {
+      hPrime(i, i) = 1;
+      zFromX(i) = this->ekfState(i);
+  }
+
+
+  
+  
+
+
   /////////////////////////////// END STUDENT CODE ////////////////////////////
 
   Update(z, hPrime, R_GPS, zFromX);
@@ -387,6 +398,15 @@ void QuadEstimatorEKF::UpdateFromMag(float magYaw)
   //    (you don't want to update your yaw the long way around the circle)
   //  - The magnetomer measurement covariance is available in member variable R_Mag
   ////////////////////////////// BEGIN STUDENT CODE ///////////////////////////
+
+
+  hPrime(0, 6) = 1;
+  zFromX(0) = this->ekfState(6);
+
+  if (z(0) - zFromX(0) > F_PI)
+      z(0) -= 2. * F_PI;
+  else if (z(0) - zFromX(0) < - F_PI)
+      z(0) += 2. * F_PI;
 
 
   /////////////////////////////// END STUDENT CODE ////////////////////////////
